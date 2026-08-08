@@ -1,33 +1,72 @@
-# Excel to PDF page
+# Member Doc Converter
 
-1. Install dependencies: `python -m pip install -r requirements.txt`.
-2. In this folder, run `python app.py`.
-3. Open `http://localhost:8000` in a browser and upload an Excel file.
+This project converts uploaded Excel files into a downloadable PDF containing three member cards per row.
 
-## Windows: install WeasyPrint system libraries
+## Project structure
 
-WeasyPrint also needs the Pango/GTK native libraries on Windows. If you see an
-error mentioning `libgobject-2.0-0`, install [MSYS2](https://www.msys2.org/),
-open its **MSYS2 UCRT64** terminal, and run:
+member_doc_converter/
+├── templates/
+│   └── index.html
+├── app.py
+├── requirements.txt
+├── render-build.sh
+├── README.md
+├── test.py
+├── uploads/
+└── output/
+
+## Local setup
+
+1. Install dependencies:
+
+   ```bash
+   python -m pip install --upgrade pip
+   python -m pip install -r requirements.txt
+   ```
+
+2. Run the FastAPI server:
+
+   ```bash
+   uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+   ```
+
+3. Open `http://localhost:8000` in your browser.
+
+## Render deployment
+
+1. Add this repository to Render as a Python Web Service.
+2. Set the build command to:
+
+   ```bash
+   sh render-build.sh
+   ```
+
+3. Set the start command to:
+
+   ```bash
+   uvicorn app:app --host 0.0.0.0 --port $PORT
+   ```
+
+4. If using WeasyPrint on Render, you may need a custom Docker image or a service
+   with the required native dependencies (`cairo`, `pango`, `gdk-pixbuf`).
+
+## Windows notes
+
+WeasyPrint requires native Pango/GTK libraries on Windows. Install MSYS2 and the
+required packages if you see an error about `libgobject-2.0-0`.
 
 ```powershell
 pacman -S mingw-w64-ucrt-x86_64-pango
 ```
 
-Close that terminal and restart `python app.py`. The application automatically
-uses the usual MSYS2 DLL directory, `C:\msys64\ucrt64\bin`. If MSYS2 was
-installed elsewhere, set this environment variable before starting the server:
+Then restart the app with:
 
 ```powershell
-$env:WEASYPRINT_DLL_DIRECTORIES = 'D:\your-msys2-folder\ucrt64\bin'
 python app.py
 ```
 
-The conversion creates three member cards per PDF row using the column names in
-the supplied conversion code. `index.html` can be opened directly to view the
-page, but submitting needs the Python server because a browser cannot run a
-Python script from a local HTML file.
+## How it works
 
-Uploaded Excel files and generated PDFs are kept only in a unique temporary
-folder while that request is processed. They are deleted immediately after the
-download finishes (or if the conversion fails).
+- `app.py` serves the upload page from `templates/index.html`.
+- Uploaded Excel files are converted to a temporary PDF and returned directly.
+- The app supports `.xlsx`, `.xls`, and `.xlsm` files.

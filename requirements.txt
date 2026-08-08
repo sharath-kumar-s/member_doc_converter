@@ -1,3 +1,7 @@
+fastapi
+uvicorn[standard]
+python-multipart
+Jinja2
 pandas
 openpyxl
 weasyprint

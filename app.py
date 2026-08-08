@@ -1,34 +1,32 @@
-"""Local server for the Excel-to-PDF upload page.
+"""FastAPI application for converting Excel uploads to member PDF cards."""
 
-Run from this folder with: python app.py
-Then browse to http://localhost:8000
-"""
-
-from cgi import FieldStorage, parse_header
-from html import escape
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import os
-from pathlib import Path
 import shutil
 import tempfile
+from html import escape
+from pathlib import Path
 
-# On Windows, WeasyPrint needs Pango/GTK DLLs. The official MSYS2 install puts
-# them here; set this before importing WeasyPrint so cffi can find them.
+import pandas as pd
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
+from weasyprint import HTML
+
+# On Windows, WeasyPrint needs Pango/GTK DLLs. The MSYS2 install puts them here.
 MSYS2_DLL_DIR = Path(r"C:\msys64\ucrt64\bin")
 if os.name == "nt" and MSYS2_DLL_DIR.is_dir():
     os.environ.setdefault("WEASYPRINT_DLL_DIRECTORIES", str(MSYS2_DLL_DIR))
 
-import pandas as pd
-from weasyprint import HTML
-
 BASE_DIR = Path(__file__).resolve().parent
+TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+app = FastAPI(title="Member Doc Converter")
 
 
 def convert_excel_to_pdf(excel_path: Path, pdf_path: Path) -> None:
     """Create three-column member-detail cards from an uploaded Excel file."""
     df = pd.read_excel(excel_path).fillna("")
 
-    # Keep PIN and mobile numbers free of Excel's common trailing '.0'.
     for column in ["PIN", "Mobile 1", "Mobile 2"]:
         if column in df.columns:
             df[column] = df[column].apply(
@@ -70,15 +68,24 @@ td { border: 1px solid #000; padding: 12px 10px; vertical-align: top; width: 33.
 
             full_name = f"{title} {name}".strip()
             relation_text = f"{relation} {rel_name}".strip()
-            address_line = ", ".join(part for part in ([f'\"{house}\"'] if house else []) + [address, village] if part)
-            po_line = f"P.O. {po.upper()} - {pin}" if po and pin else (f"P.O. {po.upper()}" if po else (f"PIN - {pin}" if pin else ""))
+            address_line = ", ".join(
+                part for part in ([f'\"{house}\"'] if house else []) + [address, village] if part
+            )
+            po_line = (
+                f"P.O. {po.upper()} - {pin}"
+                if po and pin
+                else (f"P.O. {po.upper()}" if po else (f"PIN - {pin}" if pin else ""))
+            )
             location_line = ", ".join(part for part in ([f"{taluk} Tq"] if taluk else []) + [district] if part)
             mobile_line = ", ".join(part for part in [mobile1, mobile2] if part)
 
             cell_parts = ["<td>"]
             for css_class, value in [
-                ("name", full_name), ("details", relation_text), ("details", address_line),
-                ("details po-line", po_line), ("details", location_line),
+                ("name", full_name),
+                ("details", relation_text),
+                ("details", address_line),
+                ("details po-line", po_line),
+                ("details", location_line),
                 ("details", f"M: {mobile_line}" if mobile_line else ""),
             ]:
                 if value:
@@ -91,65 +98,36 @@ td { border: 1px solid #000; padding: 12px 10px; vertical-align: top; width: 33.
     HTML(string="".join(html_parts), base_url=str(BASE_DIR)).write_pdf(pdf_path)
 
 
-class ConverterHandler(SimpleHTTPRequestHandler):
-    def do_POST(self):
-        if self.path != "/convert":
-            self.send_error(404, "Endpoint not found")
-            return
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    return TEMPLATES.TemplateResponse("index.html", {"request": request})
 
-        content_type, _ = parse_header(self.headers.get("Content-Type", ""))
-        if content_type != "multipart/form-data":
-            self.send_error(400, "Expected a file upload")
-            return
 
-        form = FieldStorage(
-            fp=self.rfile,
-            headers=self.headers,
-            environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": self.headers["Content-Type"]},
-        )
-        file_item = form["excel_file"] if "excel_file" in form else None
-        if file_item is None or not getattr(file_item, "filename", None):
-            self.send_error(400, "Please choose an Excel file")
-            return
+@app.post("/convert")
+async def convert(excel_file: UploadFile = File(...)) -> FileResponse:
+    if not excel_file.filename:
+        raise HTTPException(status_code=400, detail="Please upload an Excel file")
 
-        extension = Path(file_item.filename).suffix.lower()
-        if extension not in {".xlsx", ".xls", ".xlsm"}:
-            self.send_error(400, "Only .xlsx, .xls, and .xlsm files are supported")
-            return
+    extension = Path(excel_file.filename).suffix.lower()
+    if extension not in {".xlsx", ".xls", ".xlsm"}:
+        raise HTTPException(status_code=400, detail="Only .xlsx, .xls, and .xlsm files are supported")
 
-        safe_name = Path(file_item.filename).name
-        # Each request receives an isolated working directory. It is deleted in
-        # all cases, including a failed conversion or a completed download.
-        working_dir = Path(tempfile.mkdtemp(prefix="excel_pdf_", dir=BASE_DIR))
-        response_started = False
-        try:
-            excel_path = working_dir / safe_name
-            pdf_path = working_dir / f"{Path(safe_name).stem}.pdf"
-            with excel_path.open("wb") as destination:
-                shutil.copyfileobj(file_item.file, destination)
+    with tempfile.TemporaryDirectory(prefix="excel_pdf_") as working_dir:
+        working_dir_path = Path(working_dir)
+        excel_path = working_dir_path / Path(excel_file.filename).name
+        pdf_path = working_dir_path / f"{excel_path.stem}.pdf"
 
-            convert_excel_to_pdf(excel_path, pdf_path)
-            if not pdf_path.is_file():
-                raise RuntimeError("Conversion did not create a PDF file")
+        with excel_path.open("wb") as destination:
+            shutil.copyfileobj(excel_file.file, destination)
 
-            response_started = True
-            self.send_response(200)
-            self.send_header("Content-Type", "application/pdf")
-            self.send_header("Content-Disposition", f'attachment; filename="{pdf_path.name}"')
-            self.send_header("Content-Length", str(pdf_path.stat().st_size))
-            self.end_headers()
-            with pdf_path.open("rb") as pdf:
-                shutil.copyfileobj(pdf, self.wfile)
-        except Exception as error:
-            # Do not attempt an HTTP error if the PDF response was already
-            # started (for example, if the client disconnects mid-download).
-            if not response_started:
-                self.send_error(500, str(error))
-        finally:
-            shutil.rmtree(working_dir, ignore_errors=True)
+        convert_excel_to_pdf(excel_path, pdf_path)
+        if not pdf_path.is_file():
+            raise HTTPException(status_code=500, detail="Conversion did not create a PDF file")
+
+        return FileResponse(pdf_path, media_type="application/pdf", filename=pdf_path.name)
 
 
 if __name__ == "__main__":
-    server = ThreadingHTTPServer(("localhost", 8000), ConverterHandler)
-    print("Open http://localhost:8000 in your browser. Press Ctrl+C to stop.")
-    server.serve_forever()
+    import uvicorn
+
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

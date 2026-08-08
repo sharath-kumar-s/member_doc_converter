@@ -1,0 +1,45 @@
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary File Uploads & Conversion Outputs
+uploads/*
+output/*
+!uploads/.gitkeep
+!output/.gitkeep
+*.pdf
+*.xlsx
+*.xls
+*.png
+*.jpg
+*.jpeg
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+
+# IDE & Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
