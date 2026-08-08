@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Excel to PDF Converter</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f7fb;
+      background-image: url('Generated_Image_treg1vtreg1vtreg.png');
+      background-position: center;
+      background-repeat: no-repeat;
+      background-size: contain;
+      color: #1e293b;
+      margin: 0;
+      min-height: 100vh;
+      padding: 1px 24px;
+    }
+    main {
+      max-width: 520px;
+      margin: 28vh auto 0;
+      padding: 32px;
+      background-color: #fff9ed;
+      background-image:
+        repeating-linear-gradient(0deg, #f4e5c8 0, #f4e5c8 1px, transparent 1px, transparent 8px),
+        repeating-linear-gradient(90deg, #f7ecd6 0, #f7ecd6 1px, transparent 1px, transparent 8px);
+      border: 1px solid #c9a76d;
+      border-radius: 12px;
+      box-shadow: 0 10px 28px #1e293b4d;
+    }
+    h1 { margin-top: 0; }
+    input, button { box-sizing: border-box; width: 100%; margin-top: 14px; padding: 12px; font: inherit; }
+    button { background: #2563eb; color: #fff; border: 0; border-radius: 6px; cursor: pointer; }
+    button:disabled { background: #94a3b8; cursor: wait; }
+    #message { min-height: 24px; margin: 16px 0 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <h2>D.K Jilla Padmashali Mahasaba </br> ದ.ಕ. ಜಿಲ್ಲಾ ಪದ್ಮಶಾಲಿ ಮಹಾಸಭಾ</h2>
+    <h3>Excel to PDF Converter</h3>
+    <form id="upload-form">
+      <label for="excel-file">Choose an Excel file (Excel ಫೈಲ್ ಅನ್ನು ಆಯ್ಕೆಮಾಡಿ)</label>
+      <input id="excel-file" name="excel_file" type="file" accept=".xlsx,.xls,.xlsm" required>
+      <button type="submit">Convert to PDF (PDF ಗೆ ಪರಿವರ್ತಿಸಿ)</button>
+    </form>
+    <p id="message" role="status"></p>
+  </main>
+
+  <script>
+    const form = document.getElementById('upload-form');
+    const message = document.getElementById('message');
+    const button = form.querySelector('button');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (location.protocol === 'file:') {
+        message.textContent = 'Start the Python server, then open http://localhost:8000 in your browser.';
+        return;
+      }
+
+      button.disabled = true;
+      message.textContent = 'Uploading and converting… \n ಅಪ್‌ಲೋಡ್ ಮತ್ತು ಪರಿವರ್ತನೆ…';
+      try {
+        const response = await fetch('/convert', { method: 'POST', body: new FormData(form) });
+        if (!response.ok) throw new Error(await response.text());
+        const pdf = await response.blob();
+        const url = URL.createObjectURL(pdf);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${document.getElementById('excel-file').files[0].name.replace(/\.[^.]+$/, '')}.pdf`;
+        link.click();
+        URL.revokeObjectURL(url);
+        form.reset();
+        message.textContent = 'Conversion complete. Your PDF download has started. \n ಪರಿವರ್ತನೆ ಪೂರ್ಣಗೊಂಡಿದೆ. ನಿಮ್ಮ PDF ಡೌನ್‌ಲೋಡ್ ಪ್ರಾರಂಭವಾಗಿದೆ.';
+      } catch (error) {
+        message.textContent = `Conversion failed: ${error.message} \n ಪರಿವರ್ತನೆ ವಿಫಲವಾಯಿತು: ${error.message}`;
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
