@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
+from starlette.background import BackgroundTask
 from weasyprint import HTML
 
 # On Windows, WeasyPrint needs Pango/GTK DLLs. The MSYS2 install puts them here.
@@ -109,19 +110,24 @@ async def convert(excel_file: UploadFile = File(...)) -> FileResponse:
     if extension not in {".xlsx", ".xls", ".xlsm"}:
         raise HTTPException(status_code=400, detail="Only .xlsx, .xls, and .xlsm files are supported")
 
-    with tempfile.TemporaryDirectory(prefix="excel_pdf_") as working_dir:
-        working_dir_path = Path(working_dir)
-        excel_path = working_dir_path / Path(excel_file.filename).name
-        pdf_path = working_dir_path / f"{excel_path.stem}.pdf"
+    working_dir = Path(tempfile.mkdtemp(prefix="excel_pdf_"))
+    excel_path = working_dir / Path(excel_file.filename).name
+    pdf_path = working_dir / f"{excel_path.stem}.pdf"
 
-        with excel_path.open("wb") as destination:
-            shutil.copyfileobj(excel_file.file, destination)
+    with excel_path.open("wb") as destination:
+        shutil.copyfileobj(excel_file.file, destination)
 
-        convert_excel_to_pdf(excel_path, pdf_path)
-        if not pdf_path.is_file():
-            raise HTTPException(status_code=500, detail="Conversion did not create a PDF file")
+    convert_excel_to_pdf(excel_path, pdf_path)
+    if not pdf_path.is_file():
+        shutil.rmtree(working_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail="Conversion did not create a PDF file")
 
-        return FileResponse(pdf_path, media_type="application/pdf", filename=pdf_path.name)
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename=pdf_path.name,
+        background=BackgroundTask(lambda: shutil.rmtree(working_dir, ignore_errors=True)),
+    )
 
 
 if __name__ == "__main__":
