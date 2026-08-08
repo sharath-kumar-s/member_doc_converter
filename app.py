@@ -7,9 +7,8 @@ from html import escape
 from pathlib import Path
 
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.templating import Jinja2Templates
 from weasyprint import HTML
 
 # On Windows, WeasyPrint needs Pango/GTK DLLs. The MSYS2 install puts them here.
@@ -18,8 +17,6 @@ if os.name == "nt" and MSYS2_DLL_DIR.is_dir():
     os.environ.setdefault("WEASYPRINT_DLL_DIRECTORIES", str(MSYS2_DLL_DIR))
 
 BASE_DIR = Path(__file__).resolve().parent
-TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-
 app = FastAPI(title="Member Doc Converter")
 
 
@@ -99,8 +96,8 @@ td { border: 1px solid #000; padding: 12px 10px; vertical-align: top; width: 33.
 
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    return TEMPLATES.TemplateResponse("index.html", {"request": request})
+async def index():
+    return FileResponse(BASE_DIR / "templates" / "index.html", media_type="text/html")
 
 
 @app.post("/convert")
