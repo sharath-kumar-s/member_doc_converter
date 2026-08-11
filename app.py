@@ -1,15 +1,13 @@
 """FastAPI application for converting Excel uploads to member PDF cards."""
 
+import io
 import os
-import shutil
-import tempfile
 from html import escape
 from pathlib import Path
 
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
-from starlette.background import BackgroundTask
 from weasyprint import HTML
 
 # On Windows, WeasyPrint needs Pango/GTK DLLs. The MSYS2 install puts them here.
@@ -21,9 +19,9 @@ BASE_DIR = Path(__file__).resolve().parent
 app = FastAPI(title="Member Doc Converter")
 
 
-def convert_excel_to_pdf(excel_path: Path, pdf_path: Path) -> None:
+def convert_excel_to_pdf(df: pd.DataFrame) -> bytes:
     """Create three-column member-detail cards from an uploaded Excel file."""
-    df = pd.read_excel(excel_path).fillna("")
+    df = df.fillna("")
 
     for column in ["PIN", "Mobile 1", "Mobile 2"]:
         if column in df.columns:
@@ -93,7 +91,10 @@ td { border: 1px solid #000; padding: 12px 10px; vertical-align: top; width: 33.
         html_parts.append("</tr>")
 
     html_parts.append("</table></body></html>")
-    HTML(string="".join(html_parts), base_url=str(BASE_DIR)).write_pdf(pdf_path)
+    try:
+        return HTML(string="".join(html_parts), base_url=str(BASE_DIR)).write_pdf()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"PDF conversion failed: {exc}")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -102,7 +103,7 @@ async def index():
 
 
 @app.post("/convert")
-async def convert(excel_file: UploadFile = File(...)) -> FileResponse:
+async def convert(excel_file: UploadFile = File(...)) -> Response:
     if not excel_file.filename:
         raise HTTPException(status_code=400, detail="Please upload an Excel file")
 
@@ -110,23 +111,22 @@ async def convert(excel_file: UploadFile = File(...)) -> FileResponse:
     if extension not in {".xlsx", ".xls", ".xlsm"}:
         raise HTTPException(status_code=400, detail="Only .xlsx, .xls, and .xlsm files are supported")
 
-    working_dir = Path(tempfile.mkdtemp(prefix="excel_pdf_"))
-    excel_path = working_dir / Path(excel_file.filename).name
-    pdf_path = working_dir / f"{excel_path.stem}.pdf"
+    content = await excel_file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Please upload a non-empty Excel file")
 
-    with excel_path.open("wb") as destination:
-        shutil.copyfileobj(excel_file.file, destination)
+    try:
+        df = pd.read_excel(io.BytesIO(content)).fillna("")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid Excel file")
 
-    convert_excel_to_pdf(excel_path, pdf_path)
-    if not pdf_path.is_file():
-        shutil.rmtree(working_dir, ignore_errors=True)
-        raise HTTPException(status_code=500, detail="Conversion did not create a PDF file")
+    pdf_bytes = convert_excel_to_pdf(df)
+    filename = f"{Path(excel_file.filename).stem}.pdf"
 
-    return FileResponse(
-        pdf_path,
+    return Response(
+        content=pdf_bytes,
         media_type="application/pdf",
-        filename=pdf_path.name,
-        background=BackgroundTask(lambda: shutil.rmtree(working_dir, ignore_errors=True)),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
