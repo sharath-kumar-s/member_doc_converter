@@ -16,12 +16,7 @@ uploads/*
 output/*
 !uploads/.gitkeep
 !output/.gitkeep
-*.pdf
-*.xlsx
-*.xls
-*.png
-*.jpg
-*.jpeg
+
 
 # Environment Variables & Secrets
 .env
