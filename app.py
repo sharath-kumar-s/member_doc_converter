@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from weasyprint import HTML
 
 # On Windows, WeasyPrint needs Pango/GTK DLLs. The MSYS2 install puts them here.
@@ -17,6 +18,8 @@ if os.name == "nt" and MSYS2_DLL_DIR.is_dir():
 
 BASE_DIR = Path(__file__).resolve().parent
 app = FastAPI(title="Member Doc Converter")
+
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 
 def convert_excel_to_pdf(df: pd.DataFrame) -> bytes:
